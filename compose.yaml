@@ -1,0 +1,51 @@
+# homelab-edge: how the outside world reaches the homelab.
+#
+#   Internet ─▶ Cloudflare (Worker: extra basic-auth on some hosts)
+#            ─▶ cloudflared tunnel (no open ports on the router)
+#            ─▶ Caddy "gate-proxy" (one port per public site, see gate/Caddyfile)
+#            ─▶ auth-gate (shared login cookie)  ─▶  the app on localhost
+#
+# Everything runs with host networking because the apps are published on
+# localhost ports by the other stacks (homelab-media etc.).
+
+name: edge
+
+x-base: &base
+  restart: unless-stopped
+  network_mode: host
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  auth-gate:
+    <<: *base
+    build: ./gate
+    image: homelab/auth-gate:flask-3.1.3
+    container_name: auth-gate
+    environment:
+      COOKIE_SECRET: ${GATE_COOKIE_SECRET}
+      GATE_USER: ${GATE_USER}
+      GATE_PASS: ${GATE_PASS}
+      GATE_TITLE: ${GATE_TITLE}
+      GATE_COOKIE_NAME: ${GATE_COOKIE_NAME}
+
+  gate-proxy:
+    <<: *base
+    image: caddy:2.11.4
+    container_name: gate-proxy
+    environment:
+      SUBSONIC_GUEST_USER: ${SUBSONIC_GUEST_USER}
+      SUBSONIC_GUEST_BCRYPT: ${SUBSONIC_GUEST_BCRYPT}
+    volumes:
+      - ./gate/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on: [auth-gate]
+
+  cloudflared:
+    <<: *base
+    image: cloudflare/cloudflared:2026.8.3
+    container_name: cloudflared
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      # config.yml + tunnel credentials (see cloudflared/config.example.yml)
+      - ${APPDATA}/cloudflared:/etc/cloudflared

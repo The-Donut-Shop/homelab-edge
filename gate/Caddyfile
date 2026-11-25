@@ -1,0 +1,123 @@
+# Public entry points. cloudflared forwards each public hostname to one of the
+# ports below; every site asks for the shared gate login (auth_gate.py) first.
+# Values in {$...} come from the environment (see .env.example).
+{
+	admin off
+}
+
+(log) {
+	log {
+		output stdout
+		format console
+	}
+}
+
+# the gate's own login page must be reachable without a session
+(gate_login) {
+	@gate_login path /__gate_login*
+	handle @gate_login {
+		reverse_proxy localhost:9091
+	}
+}
+
+(gate_check) {
+	forward_auth localhost:9091 {
+		uri /__gate_check
+		copy_headers Location
+		header_up -Connection
+		header_up -Upgrade
+	}
+}
+
+# media.DOMAIN → Jellyfin
+:8097 {
+	import log
+	import gate_login
+	handle {
+		import gate_check
+		@login_endpoint path /Users/authenticatebyname /Users/AuthenticateByName
+		handle @login_endpoint {
+			reverse_proxy localhost:8096 {
+				header_up X-Emby-Authorization "MediaBrowser Client=\"Jellyfin Web\", Device=\"Browser\", DeviceId=\"gate-fallback\", Version=\"10.9.0\""
+			}
+		}
+		handle {
+			reverse_proxy localhost:8096
+		}
+	}
+}
+
+# music.DOMAIN → Navidrome. Subsonic apps (/rest/*) can't do the cookie login,
+# so they use HTTP basic auth instead.
+:4534 {
+	import log
+	@subsonic_api path /rest/*
+	handle @subsonic_api {
+		basic_auth {
+			{$SUBSONIC_GUEST_USER} {$SUBSONIC_GUEST_BCRYPT}
+		}
+		reverse_proxy localhost:4533 {
+			header_up -Authorization
+		}
+	}
+	import gate_login
+	handle {
+		import gate_check
+		reverse_proxy localhost:4533
+	}
+}
+
+# requests.DOMAIN → Seerr (movies & series)
+:5099 {
+	import log
+	import gate_login
+	handle {
+		import gate_check
+		reverse_proxy localhost:5055
+	}
+}
+
+# music-requests.DOMAIN → Aurral (artist / album / single song)
+:3599 {
+	import log
+	import gate_login
+	handle {
+		import gate_check
+		reverse_proxy localhost:3001
+	}
+}
+
+# home.DOMAIN → Homepage dashboard
+:3006 {
+	import log
+	import gate_login
+	handle {
+		import gate_check
+		reverse_proxy localhost:3005
+	}
+}
+
+# books.DOMAIN → Calibre-Web-Automated. Reader apps (OPDS, KOReader sync, Kobo
+# sync) authenticate with their Calibre-Web account, so those paths skip the gate.
+:8185 {
+	import log
+	@reader_apps path /opds* /kosync* /kobo/*
+	handle @reader_apps {
+		reverse_proxy localhost:8183
+	}
+	import gate_login
+	handle {
+		import gate_check
+		reverse_proxy localhost:8183
+	}
+}
+
+# book-requests.DOMAIN → Shelfmark
+:8186 {
+	import log
+	import gate_login
+	handle {
+		import gate_check
+		reverse_proxy localhost:8184
+	}
+}

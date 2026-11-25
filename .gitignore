@@ -1,0 +1,7 @@
+.env
+*.local
+*.local.*
+appdata/
+*.json
+!package.json
+cert.pem

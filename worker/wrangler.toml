@@ -1,0 +1,10 @@
+name = "homelab-gate"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+routes = [
+  { pattern = "music.example.com/*", zone_name = "example.com" },
+  { pattern = "media.example.com/*", zone_name = "example.com" }
+]
+
+# Secrets (set with `wrangler secret put`): GATE_USER, GATE_PASS. Optional var: REALM.
